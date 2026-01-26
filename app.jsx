@@ -92,22 +92,6 @@ function App() {
 
   const gridPx = useMemo(() => WIDTH * CELL + (WIDTH - 1) * GAP, []);
   const safeSet = (g, x, y, v) => { if (x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT) g[y][x] = v; };
-  const emptyCheck = (g) => { for (let y=0;y<g.length;y++) for (let x=0;x<g[y].length;x++) if (g[y][x]) return false; return true; };
-
-  useEffect(() => {
-    if (current <= 0) return;
-    setLayers((prev) =>
-      prev.map((l) => {
-        const cur = l.frames[current];
-        if (!cur || !emptyCheck(cur)) return l;
-        const copy = l.frames[current - 1] ? l.frames[current - 1].map((r) => [...r]) : cur;
-        const frames = l.frames.slice(); frames[current] = copy;
-        const offsets = l.offsets.slice(); offsets[current] = { ...(l.offsets[current - 1] || { x: 0, y: 0 }) };
-        const framesExt = (l.framesExt || []).slice(); framesExt[current] = [...(l.framesExt?.[current - 1] || [])];
-        return { ...l, frames, offsets, framesExt };
-      })
-    );
-  }, [current]);
 
   const mergeFrame = (fi) => {
     const out = emptyGrid();

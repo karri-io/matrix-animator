@@ -515,42 +515,13 @@ const deleteCurrentFrame = () => {
   };
 
   const saveFile = async (name, blob, mime = 'application/octet-stream') => {
-    try {
-      if (window && 'showSaveFilePicker' in window) {
-        const ext = name.includes('.') ? name.substring(name.lastIndexOf('.')) : '';
-        const handle = await window.showSaveFilePicker({
-          suggestedName: name,
-          types: [{ description: 'File', accept: { [mime]: [ext || '.*'] } }]
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;
-      }
-    } catch {}
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = name; a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-      a.remove();
-      setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 0);
-    } catch {
-      try {
-        const r = new FileReader();
-        r.onload = () => {
-          try {
-            const a = document.createElement('a');
-            a.href = String(r.result); a.download = name;
-            document.body.appendChild(a);
-            a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            a.remove();
-          } catch {}
-        };
-        r.readAsDataURL(blob);
-      } catch {}
-    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 0);
   };
 
   const exportProjectJSON = async () => {
@@ -635,14 +606,47 @@ const deleteCurrentFrame = () => {
     e.target.value = "";
   };
 
-  const exportHeader = async () => {
+  // Export current frame as PNG
+  const exportImage = async () => {
     try {
-      const frames = [];
-      for (let f=0; f<framesCount; f++) frames.push(packFrameToWords(mergeFrame(f)));
-      const body = frames
-        .map((frame) => '{' + Array.from(frame).map((v) => '0x' + v.toString(16)).join(', ') + '}')
-        .join(',\n  ');
-      const header =
+      // Dot matrix style: add spacing between pixels
+      const scale = 10; // pixel size
+      const spacing = 3; // space between dots
+      const dot = scale - spacing;
+      const imgW = WIDTH * scale;
+      const imgH = HEIGHT * scale;
+      const canvas = document.createElement('canvas');
+      canvas.width = imgW;
+      canvas.height = imgH;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#555';
+      ctx.fillRect(0, 0, imgW, imgH);
+      const frame = mergeFrame(current);
+      for (let y = 0; y < HEIGHT; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          // Draw all dots: grey for off, white for on
+          ctx.beginPath();
+          ctx.arc(x * scale + scale / 2, y * scale + scale / 2, dot / 2, 0, 2 * Math.PI);
+          ctx.fillStyle = frame[y][x] ? '#fff' : '#222';
+          ctx.fill();
+        }
+      }
+      // Export as PNG (synchronous, to avoid save dialog)
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url; a.download = `frame_${current}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {}
+  };
+  const exportHeader = () => {
+    const frames = [];
+    for (let f=0; f<framesCount; f++) frames.push(packFrameToWords(mergeFrame(f)));
+    const body = frames
+      .map((frame) => '{' + Array.from(frame).map((v) => '0x' + v.toString(16)).join(', ') + '}')
+      .join(',\n  ');
+    const header =
 `#pragma once
 #include <stdint.h>
 #include <avr/pgmspace.h>
@@ -653,8 +657,14 @@ const deleteCurrentFrame = () => {
 const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
   ${body}
 };`;
-      await saveFile('led_animation.h', new Blob([header], { type: 'text/x-c' }), 'text/x-c');
-    } catch {}
+    const blob = new Blob([header], { type: 'text/x-c' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'led_animation.h';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const [showTextModal, setShowTextModal] = useState(false);
@@ -692,6 +702,8 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
 />
 
               <button className="btn" onClick={exportHeader}>Export .h</button>
+              <button className="btn" onClick={() => exportImage('png')}>Export PNG</button>
+              <button className="btn" onClick={() => exportImage('jpg')}>Export JPG</button>
               <button className="btn" onClick={()=>{
                 try {
                   const frames=[];

@@ -672,6 +672,57 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
   const [showNumberModal, setShowNumberModal] = useState(false);
   const [numberDraft, setNumberDraft] = useState("0");
 
+  // Export the entire animation as an animated GIF
+  const exportGif = async () => {
+    function makeGif() {
+      const scale = 10;
+      const spacing = 3;
+      const dot = scale - spacing;
+      const imgW = WIDTH * scale;
+      const imgH = HEIGHT * scale;
+      const gif = new window.GIF({
+        workers: 2,
+        quality: 10,
+        width: imgW,
+        height: imgH,
+        workerScript: 'gif/gif.worker.js', // You may need to provide this file
+      });
+      for (let f = 0; f < framesCount; f++) {
+        const frame = mergeFrame(f);
+        const canvas = document.createElement('canvas');
+        canvas.width = imgW;
+        canvas.height = imgH;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#222';
+        ctx.fillRect(0, 0, imgW, imgH);
+        for (let y = 0; y < HEIGHT; y++) {
+          for (let x = 0; x < WIDTH; x++) {
+            ctx.beginPath();
+            ctx.arc(x * scale + scale / 2, y * scale + scale / 2, dot / 2, 0, 2 * Math.PI);
+            ctx.fillStyle = frame[y][x] ? '#fff' : '#888';
+            ctx.fill();
+          }
+        }
+        gif.addFrame(canvas, {copy: true, delay: 1000 / Math.max(1, fps)});
+      }
+      gif.on('finished', function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'animation.gif'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      });
+      gif.render();
+    }
+    if (!window.GIF) {
+      const script = document.createElement('script');
+      script.src = 'gif/gif.js';
+      script.onload = makeGif;
+      document.body.appendChild(script);
+    } else {
+      makeGif();
+    }
+  };
+
   return (
     <div className="container" onContextMenu={(e)=>e.preventDefault()}
          onPointerUp={() => { isDownRef.current=false; drawStateRef.current=null; }}>
@@ -703,7 +754,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
 
               <button className="btn" onClick={exportHeader}>Export .h</button>
               <button className="btn" onClick={() => exportImage('png')}>Export PNG</button>
-              <button className="btn" onClick={() => exportImage('jpg')}>Export JPG</button>
+              <button className="btn" onClick={exportGif}>Export GIF</button>
               <button className="btn" onClick={()=>{
                 try {
                   const frames=[];

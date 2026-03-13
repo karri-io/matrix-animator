@@ -607,37 +607,49 @@ const deleteCurrentFrame = () => {
     e.target.value = "";
   };
 
+  /**
+   * Shared function for exporting GIF animations and PNG images.
+   * @param {number} imgW
+   * @param {number} imgH
+   * @param {number} scale
+   * @param {boolean[][]} frame
+   * @return {HTMLCanvasElement}
+   */
+  const createDotMatrixCanvas = (imgW, imgH, scale, frame) => {
+    const spacing = 3;
+    const dotSpacing = scale - spacing;
+    const canvas = document.createElement('canvas');
+    canvas.width = imgW;
+    canvas.height = imgH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, 0, imgW, imgH);
+    for (let y = 0; y < HEIGHT; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        ctx.beginPath();
+        ctx.arc(x * scale + scale / 2, y * scale + scale / 2, dotSpacing / 2, 0, 2 * Math.PI);
+        ctx.fillStyle = frame[y][x] ? '#fff' : '#888';
+        ctx.fill();
+      }
+    }
+    return canvas;
+  };
+
   // Export current frame as PNG
   const exportImage = async () => {
     try {
       // Dot matrix style: add spacing between pixels
       const scale = 10; // pixel size
-      const spacing = 3; // space between dots
-      const dot = scale - spacing;
       const imgW = WIDTH * scale;
       const imgH = HEIGHT * scale;
-      const canvas = document.createElement('canvas');
-      canvas.width = imgW;
-      canvas.height = imgH;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#555';
-      ctx.fillRect(0, 0, imgW, imgH);
       const frame = mergeFrame(current);
-      for (let y = 0; y < HEIGHT; y++) {
-        for (let x = 0; x < WIDTH; x++) {
-          // Draw all dots: grey for off, white for on
-          ctx.beginPath();
-          ctx.arc(x * scale + scale / 2, y * scale + scale / 2, dot / 2, 0, 2 * Math.PI);
-          ctx.fillStyle = frame[y][x] ? '#fff' : '#222';
-          ctx.fill();
-        }
-      }
-      // Export as PNG (synchronous, to avoid save dialog)
+      const canvas = createDotMatrixCanvas(imgW, imgH, scale, frame);
       const url = canvas.toDataURL('image/png');
       const blob = await (await fetch(url)).blob();
       saveFile(`frame_${current}.png`, blob);
     } catch {}
   };
+
   const exportHeader = () => {
     const frames = [];
     for (let f=0; f<framesCount; f++) frames.push(packFrameToWords(mergeFrame(f)));
@@ -667,34 +679,21 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
   // Export the entire animation as an animated GIF
   const exportGif = () => {
     function makeGif() {
-      const scale = 10;
-      const spacing = 3;
-      const dot = scale - spacing;
+      const scale = 10; // pixel size
       const imgW = WIDTH * scale;
       const imgH = HEIGHT * scale;
+
       const gif = new window.GIF({
         workers: 2,
         quality: 10,
         width: imgW,
         height: imgH,
-        workerScript: 'gif/gif.worker.js', // You may need to provide this file
+        workerScript: 'gif/gif.worker.js',
       });
+
       for (let f = 0; f < framesCount; f++) {
         const frame = mergeFrame(f);
-        const canvas = document.createElement('canvas');
-        canvas.width = imgW;
-        canvas.height = imgH;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#222';
-        ctx.fillRect(0, 0, imgW, imgH);
-        for (let y = 0; y < HEIGHT; y++) {
-          for (let x = 0; x < WIDTH; x++) {
-            ctx.beginPath();
-            ctx.arc(x * scale + scale / 2, y * scale + scale / 2, dot / 2, 0, 2 * Math.PI);
-            ctx.fillStyle = frame[y][x] ? '#fff' : '#888';
-            ctx.fill();
-          }
-        }
+        const canvas = createDotMatrixCanvas(imgW, imgH, scale, frame);
         gif.addFrame(canvas, {copy: true, delay: 1000 / Math.max(1, fps)});
       }
       gif.on('finished', (blob) => saveFile('animation.gif', blob));

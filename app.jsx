@@ -514,7 +514,7 @@ const deleteCurrentFrame = () => {
     setCurrent(0);
   };
 
-  const saveFile = async (name, blob, mime = 'application/octet-stream') => {
+  const saveFile = (name, blob) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = name;
@@ -524,10 +524,11 @@ const deleteCurrentFrame = () => {
     setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 0);
   };
 
-  const exportProjectJSON = async () => {
+  const exportProjectJSON = () => {
     try {
       const data = JSON.stringify(serializeProject());
-      await saveFile('project.ledproj', new Blob([data], { type: 'application/json' }), 'application/json');
+      const blob = new Blob([data], { type: 'application/json' });
+      saveFile('project.ledproj', blob);
     } catch {}
   };
 
@@ -633,11 +634,8 @@ const deleteCurrentFrame = () => {
       }
       // Export as PNG (synchronous, to avoid save dialog)
       const url = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = url; a.download = `frame_${current}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const blob = await (await fetch(url)).blob();
+      saveFile(`frame_${current}.png`, blob);
     } catch {}
   };
   const exportHeader = () => {
@@ -658,13 +656,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
   ${body}
 };`;
     const blob = new Blob([header], { type: 'text/x-c' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'led_animation.h';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    saveFile('led_animation.h', blob);
   };
 
   const [showTextModal, setShowTextModal] = useState(false);
@@ -673,7 +665,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
   const [numberDraft, setNumberDraft] = useState("0");
 
   // Export the entire animation as an animated GIF
-  const exportGif = async () => {
+  const exportGif = () => {
     function makeGif() {
       const scale = 10;
       const spacing = 3;
@@ -705,12 +697,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
         }
         gif.addFrame(canvas, {copy: true, delay: 1000 / Math.max(1, fps)});
       }
-      gif.on('finished', function(blob) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'animation.gif'; a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-      });
+      gif.on('finished', (blob) => saveFile('animation.gif', blob));
       gif.render();
     }
     if (!window.GIF) {
@@ -753,7 +740,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
 />
 
               <button className="btn" onClick={exportHeader}>Export .h</button>
-              <button className="btn" onClick={() => exportImage('png')}>Export PNG</button>
+              <button className="btn" onClick={exportImage}>Export PNG</button>
               <button className="btn" onClick={exportGif}>Export GIF</button>
               <button className="btn" onClick={()=>{
                 try {
@@ -763,8 +750,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
                   }
                   const json=JSON.stringify({ width: WIDTH, height: HEIGHT, fps, framesCount, bytesPerFrame: Math.ceil((WIDTH*HEIGHT)/8), frames });
                   const blob=new Blob([json],{type:'application/json'});
-                  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='frames.json'; a.click();
-                  setTimeout(()=>URL.revokeObjectURL(url),0);
+                  saveFile('frames.json', blob);
                 } catch {}
               }}>Export Frames JSON</button>
             </div>

@@ -514,49 +514,21 @@ const deleteCurrentFrame = () => {
     setCurrent(0);
   };
 
-  const saveFile = async (name, blob, mime = 'application/octet-stream') => {
-    try {
-      if (window && 'showSaveFilePicker' in window) {
-        const ext = name.includes('.') ? name.substring(name.lastIndexOf('.')) : '';
-        const handle = await window.showSaveFilePicker({
-          suggestedName: name,
-          types: [{ description: 'File', accept: { [mime]: [ext || '.*'] } }]
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;
-      }
-    } catch {}
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = name; a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-      a.remove();
-      setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 0);
-    } catch {
-      try {
-        const r = new FileReader();
-        r.onload = () => {
-          try {
-            const a = document.createElement('a');
-            a.href = String(r.result); a.download = name;
-            document.body.appendChild(a);
-            a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            a.remove();
-          } catch {}
-        };
-        r.readAsDataURL(blob);
-      } catch {}
-    }
+  const saveFile = (name, blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 0);
   };
 
-  const exportProjectJSON = async () => {
+  const exportProjectJSON = () => {
     try {
       const data = JSON.stringify(serializeProject());
-      await saveFile('project.ledproj', new Blob([data], { type: 'application/json' }), 'application/json');
+      const blob = new Blob([data], { type: 'application/json' });
+      saveFile('project.ledproj', blob);
     } catch {}
   };
 
@@ -635,14 +607,56 @@ const deleteCurrentFrame = () => {
     e.target.value = "";
   };
 
-  const exportHeader = async () => {
+  /**
+   * Shared function for exporting GIF animations and PNG images.
+   * @param {number} imgW
+   * @param {number} imgH
+   * @param {number} scale
+   * @param {boolean[][]} frame
+   * @return {HTMLCanvasElement}
+   */
+  const createDotMatrixCanvas = (imgW, imgH, scale, frame) => {
+    const spacing = 3;
+    const dotSpacing = scale - spacing;
+    const canvas = document.createElement('canvas');
+    canvas.width = imgW;
+    canvas.height = imgH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, 0, imgW, imgH);
+    for (let y = 0; y < HEIGHT; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        ctx.beginPath();
+        ctx.arc(x * scale + scale / 2, y * scale + scale / 2, dotSpacing / 2, 0, 2 * Math.PI);
+        ctx.fillStyle = frame[y][x] ? '#fff' : '#888';
+        ctx.fill();
+      }
+    }
+    return canvas;
+  };
+
+  // Export current frame as PNG
+  const exportImage = async () => {
     try {
-      const frames = [];
-      for (let f=0; f<framesCount; f++) frames.push(packFrameToWords(mergeFrame(f)));
-      const body = frames
-        .map((frame) => '{' + Array.from(frame).map((v) => '0x' + v.toString(16)).join(', ') + '}')
-        .join(',\n  ');
-      const header =
+      // Dot matrix style: add spacing between pixels
+      const scale = 10; // pixel size
+      const imgW = WIDTH * scale;
+      const imgH = HEIGHT * scale;
+      const frame = mergeFrame(current);
+      const canvas = createDotMatrixCanvas(imgW, imgH, scale, frame);
+      const url = canvas.toDataURL('image/png');
+      const blob = await (await fetch(url)).blob();
+      saveFile(`frame_${current}.png`, blob);
+    } catch {}
+  };
+
+  const exportHeader = () => {
+    const frames = [];
+    for (let f=0; f<framesCount; f++) frames.push(packFrameToWords(mergeFrame(f)));
+    const body = frames
+      .map((frame) => '{' + Array.from(frame).map((v) => '0x' + v.toString(16)).join(', ') + '}')
+      .join(',\n  ');
+    const header =
 `#pragma once
 #include <stdint.h>
 #include <avr/pgmspace.h>
@@ -653,14 +667,47 @@ const deleteCurrentFrame = () => {
 const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
   ${body}
 };`;
-      await saveFile('led_animation.h', new Blob([header], { type: 'text/x-c' }), 'text/x-c');
-    } catch {}
+    const blob = new Blob([header], { type: 'text/x-c' });
+    saveFile('led_animation.h', blob);
   };
 
   const [showTextModal, setShowTextModal] = useState(false);
   const [textDraft, setTextDraft] = useState("");
   const [showNumberModal, setShowNumberModal] = useState(false);
   const [numberDraft, setNumberDraft] = useState("0");
+
+  // Export the entire animation as an animated GIF
+  const exportGif = () => {
+    function makeGif() {
+      const scale = 10; // pixel size
+      const imgW = WIDTH * scale;
+      const imgH = HEIGHT * scale;
+
+      const gif = new window.GIF({
+        workers: 2,
+        quality: 10,
+        width: imgW,
+        height: imgH,
+        workerScript: 'gif/gif.worker.js',
+      });
+
+      for (let f = 0; f < framesCount; f++) {
+        const frame = mergeFrame(f);
+        const canvas = createDotMatrixCanvas(imgW, imgH, scale, frame);
+        gif.addFrame(canvas, {copy: true, delay: 1000 / Math.max(1, fps)});
+      }
+      gif.on('finished', (blob) => saveFile('animation.gif', blob));
+      gif.render();
+    }
+    if (!window.GIF) {
+      const script = document.createElement('script');
+      script.src = 'gif/gif.js';
+      script.onload = makeGif;
+      document.body.appendChild(script);
+    } else {
+      makeGif();
+    }
+  };
 
   return (
     <div className="container" onContextMenu={(e)=>e.preventDefault()}
@@ -692,6 +739,8 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
 />
 
               <button className="btn" onClick={exportHeader}>Export .h</button>
+              <button className="btn" onClick={exportImage}>Export PNG</button>
+              <button className="btn" onClick={exportGif}>Export GIF</button>
               <button className="btn" onClick={()=>{
                 try {
                   const frames=[];
@@ -700,8 +749,7 @@ const uint32_t led_anim[LED_FRAMES][${HEIGHT}] PROGMEM = {
                   }
                   const json=JSON.stringify({ width: WIDTH, height: HEIGHT, fps, framesCount, bytesPerFrame: Math.ceil((WIDTH*HEIGHT)/8), frames });
                   const blob=new Blob([json],{type:'application/json'});
-                  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='frames.json'; a.click();
-                  setTimeout(()=>URL.revokeObjectURL(url),0);
+                  saveFile('frames.json', blob);
                 } catch {}
               }}>Export Frames JSON</button>
             </div>
